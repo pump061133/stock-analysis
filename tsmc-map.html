@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>台積電供應鏈星圖</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:      #0b1120;
+  --surface: #141d2e;
+  --border:  #1e2d45;
+  --text:    #e2e8f4;
+  --text-2:  #64748b;
+  --accent:  #3b82f6;
+  /* sector colors */
+  --c-equipment: #3b82f6;
+  --c-material:  #22c55e;
+  --c-substrate: #06b6d4;
+  --c-osat:      #a855f7;
+  --c-icdesign:  #f97316;
+  --c-ai:        #ef4444;
+  --c-power:     #ec4899;
+  --c-peer:      #94a3b8;
+  --c-fab:       #fbbf24;
+}
+body { background: var(--bg); color: var(--text); font-family: -apple-system,'Helvetica Neue',Arial,sans-serif; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+
+/* ── Header ── */
+.header { display: flex; align-items: center; justify-content: space-between; padding: 10px 18px; border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0; }
+.header-title { font-size: 16px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+.header-title .glow { width: 10px; height: 10px; border-radius: 50%; background: var(--c-fab); box-shadow: 0 0 10px var(--c-fab); }
+.header-actions { display: flex; gap: 8px; align-items: center; }
+.btn { border: 1px solid var(--border); background: var(--surface); color: var(--text-2); border-radius: 6px; padding: 5px 12px; font-size: 12px; cursor: pointer; transition: all .15s; }
+.btn:hover { background: var(--border); color: var(--text); }
+.btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+/* ── Layout ── */
+.layout { display: flex; flex: 1; overflow: hidden; }
+.graph-wrap { flex: 1; position: relative; overflow: hidden; }
+#graph { width: 100%; height: 100%; cursor: grab; }
+#graph.grabbing { cursor: grabbing; }
+
+/* ── Info panel ── */
+.info-panel {
+  width: 280px; flex-shrink: 0; background: var(--surface); border-left: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow: hidden; transition: width .2s;
+}
+.info-panel.collapsed { width: 0; }
+.info-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--text-2); font-size: 13px; padding: 20px; text-align: center; }
+.info-empty .icon { font-size: 36px; }
+.info-content { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.info-badge { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 3px 10px; border-radius: 10px; }
+.info-code { font-size: 28px; font-weight: 900; letter-spacing: -1px; }
+.info-name { font-size: 15px; font-weight: 700; margin-top: 2px; }
+.info-role { font-size: 11px; margin-top: 4px; opacity: .7; }
+.info-note { font-size: 12px; line-height: 1.7; color: var(--text-2); background: var(--bg); border-radius: 8px; padding: 10px 12px; }
+.info-section h5 { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--text-2); margin-bottom: 8px; }
+.info-link-list { display: flex; flex-direction: column; gap: 4px; }
+.info-link { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer; transition: border-color .1s, background .1s; display: flex; justify-content: space-between; align-items: center; }
+.info-link:hover { border-color: var(--accent); background: rgba(59,130,246,.08); }
+.info-link .code { font-weight: 700; font-size: 11px; opacity: .7; }
+.stock-price-box { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+.spb-price { font-size: 26px; font-weight: 800; }
+.spb-change { font-size: 13px; font-weight: 700; padding: 2px 7px; border-radius: 5px; display: inline-block; margin-top: 4px; }
+.up   { color: #4ade80; }
+.down { color: #f87171; }
+.up-bg   { background: rgba(74,222,128,.1); }
+.down-bg { background: rgba(248,113,113,.1); }
+.spb-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; }
+.spb-item .lbl { font-size: 10px; color: var(--text-2); }
+.spb-item .val { font-size: 13px; font-weight: 700; }
+.btn-fetch { width: 100%; margin-top: 8px; background: var(--accent); color: #fff; border: none; border-radius: 7px; padding: 8px; font-size: 12px; font-weight: 600; cursor: pointer; transition: opacity .15s; }
+.btn-fetch:hover { opacity: .85; }
+.btn-fetch:disabled { opacity: .5; cursor: default; }
+
+/* ── Legend ── */
+.legend { padding: 8px 18px; display: flex; flex-wrap: wrap; gap: 6px 16px; border-top: 1px solid var(--border); background: var(--surface); flex-shrink: 0; }
+.legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-2); cursor: pointer; transition: color .1s; user-select: none; }
+.legend-item:hover { color: var(--text); }
+.legend-item.inactive { opacity: .35; }
+.legend-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.legend-hint { font-size: 11px; color: var(--text-2); margin-left: auto; }
+
+/* SVG tooltip */
+.tooltip {
+  position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 12px; font-size: 12px; color: var(--text);
+  box-shadow: 0 8px 24px rgba(0,0,0,.4); opacity: 0; transition: opacity .12s;
+  max-width: 200px; z-index: 100;
+}
+.tooltip.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-title"><span class="glow"></span>台積電供應鏈星圖 — 台股上下游關係網絡</div>
+  <div class="header-actions">
+    <button class="btn" id="btnLabels" onclick="toggleLabels()" title="顯示/隱藏股名">標籤</button>
+    <button class="btn" id="btnPrices" onclick="loadAllPrices()">↓ 載入股價</button>
+    <button class="btn" onclick="resetView()">⊙ 重置視角</button>
+    <a href="index.html" class="btn">📊 看板</a>
+  </div>
+</div>
+
+<div class="layout">
+  <div class="graph-wrap" id="graphWrap">
+    <svg id="graph" viewBox="0 0 1100 720" preserveAspectRatio="xMidYMid meet"></svg>
+    <div class="tooltip" id="tooltip"></div>
+  </div>
+  <div class="info-panel" id="infoPanel">
+    <div class="info-empty" id="infoEmpty">
+      <div class="icon">👆</div>
+      <div>點擊節點查看詳情</div>
+      <div style="font-size:11px">含股票即時資料</div>
+    </div>
+    <div class="info-content" id="infoContent" style="display:none"></div>
+  </div>
+</div>
+
+<div class="legend" id="legend">
+  <div class="legend-item" data-sector="equipment" onclick="toggleSector(this,'equipment')"><span class="legend-dot" style="background:var(--c-equipment)"></span>上游設備</div>
+  <div class="legend-item" data-sector="material"  onclick="toggleSector(this,'material')"><span class="legend-dot" style="background:var(--c-material)"></span>上游材料</div>
+  <div class="legend-item" data-sector="substrate" onclick="toggleSector(this,'substrate')"><span class="legend-dot" style="background:var(--c-substrate)"></span>基板/散熱</div>
+  <div class="legend-item" data-sector="osat"      onclick="toggleSector(this,'osat')"><span class="legend-dot" style="background:var(--c-osat)"></span>封裝OSAT</div>
+  <div class="legend-item" data-sector="icdesign"  onclick="toggleSector(this,'icdesign')"><span class="legend-dot" style="background:var(--c-icdesign)"></span>IC設計(下游)</div>
+  <div class="legend-item" data-sector="ai"        onclick="toggleSector(this,'ai')"><span class="legend-dot" style="background:var(--c-ai)"></span>AI/伺服器(終端)</div>
+  <div class="legend-item" data-sector="power"     onclick="toggleSector(this,'power')"><span class="legend-dot" style="background:var(--c-power)"></span>電源/散熱</div>
+  <div class="legend-item" data-sector="peer"      onclick="toggleSector(this,'peer')"><span class="legend-dot" style="background:var(--c-peer)"></span>同業</div>
+  <span class="legend-hint">滾輪縮放 · 拖曳移動 · 點擊查詳情</span>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+// DATA
+// ══════════════════════════════════════════════════════════════
+const SECTOR_COLORS = {
+  fab:'#fbbf24', equipment:'#3b82f6', material:'#22c55e',
+  substrate:'#06b6d4', osat:'#a855f7', icdesign:'#f97316',
+  ai:'#ef4444', power:'#ec4899', peer:'#94a3b8'
+};
+const SECTOR_LABELS = {
+  fab:'晶圓代工', equipment:'上游設備', material:'上游材料',
+  substrate:'基板/散熱', osat:'封裝OSAT', icdesign:'IC設計',
+  ai:'AI/伺服器', power:'電源散熱', peer:'同業'
+};
+const ROLE_LABELS = {
+  center:'核心', upstream:'上游供應商', downstream:'下游客戶', peer:'同業競爭', infra:'基礎設施'
+};
+
+// angle: standard math angle (0=right, 90=top, counterclockwise)
+// r: radius from center
+const cx = 540, cy = 360;
+
+const NODES_DEF = [
+  // CENTER
+  { id:'2330', name:'台積電',   sector:'fab',       role:'center',     r:0,   angle:0,   size:44, note:'全球最大晶圓代工廠，市佔超過 60%。AI 晶片、手機 AP、HPC 核心製造者。CoWoS 先進封裝壟斷地位，2026 年預估 EPS 55 元+。', eps26e:55, eps25:45 },
+  // UPSTREAM EQUIPMENT
+  { id:'6264', name:'家登精密', sector:'equipment', role:'upstream',   r:185, angle:140, size:20, note:'EUV 光罩盒全球市佔 ~85%，TSMC 指定獨供，CoWoS 封裝載具新引擎。', eps25:null, eps26e:null },
+  { id:'8131', name:'弘塑科技', sector:'equipment', role:'upstream',   r:290, angle:128, size:18, note:'TSMC SoIC 濕清洗製程客戶獨家供應商，CoWoS 濕製程市佔 ~50%。', eps25:null, eps26e:null },
+  { id:'6259', name:'辛耘企業', sector:'equipment', role:'upstream',   r:185, angle:112, size:18, note:'TSMC 暫時鍵合/溶液回收設備，先進封裝製程設備商。', eps25:null, eps26e:null },
+  { id:'6270', name:'均華精密', sector:'equipment', role:'upstream',   r:290, angle:100, size:17, note:'TSMC 先進封裝自動化設備，AI 整廠需求受惠。', eps25:null, eps26e:null },
+  { id:'3563', name:'牧德科技', sector:'equipment', role:'upstream',   r:290, angle:155, size:17, note:'PCB 自動光學檢測（AOI）設備，RDL 高速成長受惠。', eps25:null, eps26e:null },
+  { id:'2360', name:'致茂電子', sector:'equipment', role:'upstream',   r:185, angle:167, size:18, note:'半導體測試設備龍頭，電源測試、功率元件測試，AI 帶動成長。', eps25:null, eps26e:null },
+  // UPSTREAM MATERIALS
+  { id:'6514', name:'新應材',   sector:'material',  role:'upstream',   r:185, angle:80,  size:20, note:'TSMC 3nm/2nm Rinse 化學品獨供。在地化策略唯一指定廠商，客戶獨家單點。', eps25:null, eps26e:null },
+  { id:'6488', name:'環球晶',   sector:'material',  role:'upstream',   r:290, angle:72,  size:22, note:'全球第三大矽晶圓廠。台灣最大，TSMC/三星/Intel 均為客戶，8.7% CAGR。', eps25:null, eps26e:null },
+  { id:'4712', name:'三福化工', sector:'material',  role:'upstream',   r:290, angle:57,  size:16, note:'TSMC 指定電子化學品供應商，在地化供應鏈受惠。', eps25:null, eps26e:null },
+  { id:'5234', name:'達興材料', sector:'material',  role:'upstream',   r:185, angle:45,  size:16, note:'半導體/面板特用化學品，TSMC 供應鏈在地化受惠。', eps25:null, eps26e:null },
+  // SUBSTRATE / THERMAL
+  { id:'3037', name:'欣興電子', sector:'substrate', role:'upstream',   r:290, angle:18,  size:22, note:'全球 ABF 載板（FC-BGA）龍頭之一，AI 高階板需求暴增。10.6% CAGR，$48.9 億市場。', eps25:null, eps26e:null },
+  { id:'3653', name:'健策精密', sector:'substrate', role:'upstream',   r:185, angle:28,  size:20, note:'CoWoS Rubin lid / IHS / In-TIM 散熱封裝級單點，2026 台積電直接液冷整進 CoWoS。', eps25:null, eps26e:null },
+  // OSAT / DOWNSTREAM PACKAGING
+  { id:'3711', name:'日月光',   sector:'osat',      role:'downstream', r:185, angle:345, size:26, note:'全球最大 OSAT 封裝測試廠，ASE 集團。AI 先進封裝 WoS/SiP 成長，台積電晶圓出口後主要接手方。', eps25:null, eps26e:null },
+  { id:'2452', name:'矽品精密', sector:'osat',      role:'downstream', r:290, angle:355, size:20, note:'台灣第二大 OSAT，ASE 集團旗下，CoWoS WoS 封裝製程。', eps25:null, eps26e:null },
+  // IC DESIGN (TSMC foundry customers)
+  { id:'2454', name:'聯發科',   sector:'icdesign',  role:'downstream', r:185, angle:300, size:30, note:'全球最大 AP/SoC Fabless，TSMC 3nm/4nm 最大客戶之一。2026 年 AI 手機、AI PC 拉動需求。', eps25:null, eps26e:null },
+  { id:'2379', name:'瑞昱',     sector:'icdesign',  role:'downstream', r:290, angle:315, size:22, note:'網路晶片（NIC/Switch）龍頭，TSMC 客戶。AI 資料中心網路設備需求受惠。', eps25:null, eps26e:null },
+  { id:'3034', name:'聯詠',     sector:'icdesign',  role:'downstream', r:290, angle:288, size:20, note:'顯示驅動 IC 龍頭，TSMC 客戶。車用/AMOLED 拉動成長。', eps25:null, eps26e:null },
+  { id:'3661', name:'世芯-KY',  sector:'icdesign',  role:'downstream', r:185, angle:275, size:20, note:'ASIC 設計服務龍頭，承接雲端巨頭定製 AI 晶片設計，TSMC 製造。EPS 翻倍潛力。', eps25:null, eps26e:null },
+  { id:'3443', name:'創意電子', sector:'icdesign',  role:'downstream', r:290, angle:262, size:18, note:'TSMC 旗下設計服務公司，協助客戶導入先進製程，CoWoS chiplet 設計。', eps25:null, eps26e:null },
+  // AI / SERVER (end demand)
+  { id:'2382', name:'廣達電腦', sector:'ai',        role:'downstream', r:185, angle:233, size:26, note:'全球最大伺服器 ODM，Google/Meta AI 伺服器主力供應商。GB200/NVL72 機櫃主要組裝廠。', eps25:null, eps26e:null },
+  { id:'2317', name:'鴻海',     sector:'ai',        role:'downstream', r:290, angle:222, size:28, note:'全球最大電子製造服務商，GB200 NVL72 最大組裝廠，AI 伺服器與 EV 雙引擎。', eps25:null, eps26e:null },
+  { id:'6669', name:'緯穎科技', sector:'ai',        role:'downstream', r:290, angle:247, size:22, note:'Microsoft/Google/Amazon AI 伺服器 ODM，超級運算伺服器高市佔，2025 年 EPS 逾百元。', eps25:null, eps26e:null },
+  // POWER / THERMAL
+  { id:'2308', name:'台達電',   sector:'power',     role:'infra',      r:185, angle:203, size:24, note:'電源管理 AI 資料中心核心贏家。PSU、VR 電源模組、液冷系統全布局，2026 EPS 估 35 元。', eps25:28, eps26e:35.06 },
+  { id:'3017', name:'奇鋐科技', sector:'power',     role:'infra',      r:290, angle:190, size:22, note:'液冷水冷板龍頭，AI 散熱剛需。2026 EPS 估 70 元，但謝金河警示年線乖離大。', eps25:45, eps26e:70.25 },
+  // PEER
+  { id:'2303', name:'聯電',     sector:'peer',      role:'peer',       r:185, angle:175, size:22, note:'台灣第二大晶圓代工廠，專注成熟製程（28nm+）。IoT/車用/工業 IC 受惠，本益比合理。', eps25:null, eps26e:null },
+];
+
+const EDGES_DEF = [
+  // Equipment → TSMC
+  { from:'6264', to:'2330', type:'supply',     label:'EUV光罩盒',  width:2.5 },
+  { from:'8131', to:'2330', type:'supply',     label:'濕清洗設備', width:2 },
+  { from:'6259', to:'2330', type:'supply',     label:'鍵合設備',   width:1.5 },
+  { from:'6270', to:'2330', type:'supply',     label:'自動化',     width:1.5 },
+  { from:'3563', to:'2330', type:'supply',     label:'AOI檢測',    width:1.5 },
+  { from:'2360', to:'2330', type:'supply',     label:'測試設備',   width:1.5 },
+  // Material → TSMC
+  { from:'6514', to:'2330', type:'supply',     label:'Rinse化學品',width:2.5 },
+  { from:'6488', to:'2330', type:'supply',     label:'矽晶圓',     width:2 },
+  { from:'4712', to:'2330', type:'supply',     label:'特化品',     width:1.5 },
+  { from:'5234', to:'2330', type:'supply',     label:'特化品',     width:1.5 },
+  // Substrate → TSMC
+  { from:'3037', to:'2330', type:'supply',     label:'ABF載板',    width:2 },
+  { from:'3653', to:'2330', type:'supply',     label:'CoWoS散熱',  width:2 },
+  // TSMC → OSAT
+  { from:'2330', to:'3711', type:'foundry',    label:'晶圓輸出',   width:3 },
+  { from:'2330', to:'2452', type:'foundry',    label:'晶圓輸出',   width:2 },
+  // TSMC → IC Design
+  { from:'2330', to:'2454', type:'foundry',    label:'先進製程代工',width:3 },
+  { from:'2330', to:'2379', type:'foundry',    label:'代工製造',   width:2 },
+  { from:'2330', to:'3034', type:'foundry',    label:'代工製造',   width:1.5 },
+  { from:'2330', to:'3661', type:'foundry',    label:'ASIC代工',   width:2 },
+  { from:'2330', to:'3443', type:'foundry',    label:'設計服務',   width:1.5 },
+  // IC Design → AI/Server
+  { from:'2454', to:'2382', type:'downstream', label:'SoC/AI晶片', width:2 },
+  { from:'2454', to:'2317', type:'downstream', label:'SoC晶片',    width:1.5 },
+  { from:'3661', to:'2382', type:'downstream', label:'ASIC晶片',   width:1.5 },
+  // OSAT → AI/Server
+  { from:'3711', to:'2382', type:'downstream', label:'封裝後晶片', width:2 },
+  { from:'3711', to:'2317', type:'downstream', label:'封裝後晶片', width:2 },
+  { from:'3711', to:'6669', type:'downstream', label:'封裝後晶片', width:1.5 },
+  // Power/Thermal → AI/Server
+  { from:'2308', to:'2382', type:'infra',      label:'電源模組',   width:1.5 },
+  { from:'2308', to:'2317', type:'infra',      label:'電源模組',   width:1.5 },
+  { from:'3017', to:'2382', type:'infra',      label:'散熱模組',   width:1.5 },
+  // Peer
+  { from:'2303', to:'2330', type:'peer',       label:'成熟製程競合',width:1.5 },
+];
+
+const EDGE_TYPE_STYLE = {
+  supply:     { color:'rgba(59,130,246,.55)', dash:'none' },
+  foundry:    { color:'rgba(251,191,36,.6)',  dash:'none' },
+  downstream: { color:'rgba(168,85,247,.5)', dash:'none' },
+  infra:      { color:'rgba(236,72,153,.4)', dash:'6,4' },
+  peer:       { color:'rgba(148,163,184,.4)', dash:'4,4' },
+};
+
+// ══════════════════════════════════════════════════════════════
+// GRAPH STATE & LAYOUT
+// ══════════════════════════════════════════════════════════════
+let nodes = {}, edges = [];
+let hiddenSectors = new Set();
+let showLabels = true;
+let selectedNode = null;
+let priceData = {};
+let transform = { x:0, y:0, scale:1 };
+
+function polar(r, angleDeg) {
+  const rad = angleDeg * Math.PI / 180;
+  return { x: cx + r * Math.cos(rad), y: cy - r * Math.sin(rad) };
+}
+
+function initNodes() {
+  NODES_DEF.forEach(n => {
+    const pos = n.r === 0 ? { x: cx, y: cy } : polar(n.r, n.angle);
+    nodes[n.id] = { ...n, x: pos.x, y: pos.y };
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
+// SVG RENDERING
+// ══════════════════════════════════════════════════════════════
+const svg = document.getElementById('graph');
+
+function render() {
+  svg.innerHTML = '';
+
+  // Defs (markers, gradients, glow)
+  const defs = svgEl('defs');
+  // Arrow markers
+  ['supply','foundry','downstream','infra','peer'].forEach(type => {
+    const style = EDGE_TYPE_STYLE[type];
+    const m = svgEl('marker', { id:`arrowhead-${type}`, markerWidth:'8', markerHeight:'8', refX:'7', refY:'4', orient:'auto' });
+    m.appendChild(svgEl('path', { d:'M0,0 L8,4 L0,8 Z', fill: style.color.replace(/[.\d]+\)$/,'1)') }));
+    defs.appendChild(m);
+  });
+  // TSMC glow filter
+  const filter = svgEl('filter', { id:'glow', x:'-50%', y:'-50%', width:'200%', height:'200%' });
+  const fe1 = svgEl('feGaussianBlur', { stdDeviation:'5', result:'blur' });
+  const fe2 = svgEl('feComposite', { in:'SourceGraphic', in2:'blur', operator:'over' });
+  filter.appendChild(fe1); filter.appendChild(fe2);
+  defs.appendChild(filter);
+  svg.appendChild(defs);
+
+  // Background grid (subtle)
+  const bgGrid = svgEl('g', { opacity:'.06' });
+  for (let x = 0; x < 1100; x+=60) bgGrid.appendChild(svgEl('line', { x1:x, y1:0, x2:x, y2:720, stroke:'#94a3b8', 'stroke-width':'0.5' }));
+  for (let y = 0; y < 720; y+=60) bgGrid.appendChild(svgEl('line', { x1:0, y1:y, x2:1100, y2:y, stroke:'#94a3b8', 'stroke-width':'0.5' }));
+  svg.appendChild(bgGrid);
+
+  // Background sector wedges (subtle area indicators)
+  drawSectorWedge(svg, 120, 170, '#3b82f6', .05); // equipment top-left
+  drawSectorWedge(svg, 40,  90,  '#22c55e', .05); // material top
+  drawSectorWedge(svg, -10, 40,  '#06b6d4', .05); // substrate top-right
+  drawSectorWedge(svg, -30, -5,  '#a855f7', .05); // osat right
+  drawSectorWedge(svg, -80, -25, '#f97316', .05); // icdesign bottom-right
+  drawSectorWedge(svg, -135,-75, '#ef4444', .05); // ai bottom
+  drawSectorWedge(svg, -175,-130,'#ec4899', .05); // power bottom-left
+  drawSectorWedge(svg, 165, 180, '#94a3b8', .05); // peer left
+
+  // "UPSTREAM" / "DOWNSTREAM" labels
+  const labelStyle = { fill:'#64748b', 'font-size':'11', 'font-weight':'600', 'letter-spacing':'2', 'text-anchor':'middle', 'font-family':'system-ui' };
+  const ulEl = svgEl('text', { ...labelStyle, x: cx - 180, y: 60, transform:`rotate(-45,${cx-180},60)` }); ulEl.textContent = '↑ UPSTREAM 上游'; svg.appendChild(ulEl);
+  const dlEl = svgEl('text', { ...labelStyle, x: cx + 220, y: cy + 270, transform:`rotate(-45,${cx+220},${cy+270})` }); dlEl.textContent = 'DOWNSTREAM 下游 ↓'; svg.appendChild(dlEl);
+
+  // Zoom/pan group
+  const g = svgEl('g', { id:'zoomGroup', transform:`translate(${transform.x},${transform.y}) scale(${transform.scale})` });
+  svg.appendChild(g);
+
+  // EDGES
+  EDGES_DEF.forEach(e => {
+    const a = nodes[e.from], b = nodes[e.to];
+    if (!a || !b) return;
+    const aHidden = hiddenSectors.has(a.sector) || hiddenSectors.has(b.sector);
+    if (aHidden) return;
+    const style = EDGE_TYPE_STYLE[e.type] || EDGE_TYPE_STYLE.supply;
+    const path = buildEdgePath(a, b);
+    const el = svgEl('path', {
+      d: path, fill:'none', stroke: style.color,
+      'stroke-width': e.width || 1.5,
+      'stroke-dasharray': style.dash === 'none' ? '' : style.dash,
+      'marker-end': `url(#arrowhead-${e.type})`,
+      class: 'edge',
+      'data-from': e.from, 'data-to': e.to,
+    });
+    g.appendChild(el);
+  });
+
+  // NODES
+  NODES_DEF.forEach(n => {
+    const nd = nodes[n.id];
+    if (hiddenSectors.has(n.sector)) return;
+    const color = SECTOR_COLORS[n.sector] || '#64748b';
+    const isCenter  = n.id === '2330';
+    const isSelected = selectedNode === n.id;
+    const grp = svgEl('g', { class:'node-grp', 'data-id': n.id, style:'cursor:pointer' });
+
+    // Glow ring for TSMC or selected
+    if (isCenter || isSelected) {
+      grp.appendChild(svgEl('circle', {
+        cx: nd.x, cy: nd.y, r: n.size + 10,
+        fill:'none', stroke: color, 'stroke-width':'2', opacity:'.3',
+        class:'glow-ring'
+      }));
+    }
+
+    // Outer ring (price trend indicator — filled if price loaded)
+    const hasPrice = priceData[n.id];
+    if (hasPrice) {
+      const pd = priceData[n.id];
+      const ringColor = (pd.changeRate??0) > 0 ? '#4ade80' : (pd.changeRate??0) < 0 ? '#f87171' : '#64748b';
+      grp.appendChild(svgEl('circle', {
+        cx:nd.x, cy:nd.y, r:n.size + 5,
+        fill:'none', stroke:ringColor, 'stroke-width':'2', opacity:'.8'
+      }));
+    }
+
+    // Main circle
+    const circle = svgEl('circle', {
+      cx:nd.x, cy:nd.y, r:n.size,
+      fill: isCenter ? `radial-gradient(circle,#fffbe6,#f59e0b)` : `${color}22`,
+      stroke: isSelected ? '#fff' : color,
+      'stroke-width': isCenter ? 3 : isSelected ? 2.5 : 1.5,
+    });
+    // SVG doesn't support radial-gradient on fill attr directly — use def
+    if (isCenter) {
+      const gid = 'center-grad';
+      if (!defs.querySelector(`#${gid}`)) {
+        const cg = svgEl('radialGradient', { id:gid, cx:'40%', cy:'35%', r:'65%' });
+        cg.appendChild(svgEl('stop', { offset:'0%',   'stop-color':'#fffbe6' }));
+        cg.appendChild(svgEl('stop', { offset:'100%', 'stop-color':'#d97706' }));
+        defs.appendChild(cg);
+      }
+      circle.setAttribute('fill', `url(#center-grad)`);
+    }
+    grp.appendChild(circle);
+
+    // Code label (always shown)
+    const codeText = svgEl('text', {
+      x:nd.x, y:nd.y + (isCenter ? 5 : 4),
+      fill: isCenter ? '#1c1400' : color,
+      'font-size': isCenter ? '13' : n.size > 22 ? '11' : '10',
+      'font-weight': '800', 'text-anchor':'middle', 'dominant-baseline':'middle',
+      'font-family':'system-ui', style:'pointer-events:none'
+    });
+    codeText.textContent = n.id;
+    grp.appendChild(codeText);
+
+    // Name label (toggleable)
+    if (showLabels) {
+      const labelY = nd.y + n.size + 13;
+      const nameEl = svgEl('text', {
+        x:nd.x, y: labelY,
+        fill:'#cbd5e1', 'font-size':'10', 'font-weight':'600',
+        'text-anchor':'middle', 'font-family':'system-ui', style:'pointer-events:none'
+      });
+      nameEl.textContent = n.name;
+      grp.appendChild(nameEl);
+
+      // Price micro-label if loaded
+      if (hasPrice) {
+        const pd = priceData[n.id];
+        const priceColor = (pd.changeRate??0) > 0 ? '#4ade80' : (pd.changeRate??0) < 0 ? '#f87171' : '#94a3b8';
+        const priceEl = svgEl('text', {
+          x:nd.x, y: labelY + 13,
+          fill: priceColor, 'font-size':'9.5', 'font-weight':'700',
+          'text-anchor':'middle', 'font-family':'system-ui', style:'pointer-events:none'
+        });
+        const sign = (pd.changeRate??0) > 0 ? '+' : '';
+        priceEl.textContent = pd.changeRate != null
+          ? `${pd.price} (${sign}${pd.changeRate.toFixed(1)}%)`
+          : `${pd.price}`;
+        grp.appendChild(priceEl);
+      }
+    }
+
+    // Event handlers
+    grp.addEventListener('mouseenter', (e) => showTooltip(e, n));
+    grp.addEventListener('mouseleave', hideTooltip);
+    grp.addEventListener('click', () => selectNode(n.id));
+    g.appendChild(grp);
+  });
+}
+
+function buildEdgePath(a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  // Offset start/end to circle edge
+  const rA = (nodes[a.id]?.size||18) + 2, rB = (nodes[b.id]?.size||18) + 2;
+  const nx = dx/dist, ny = dy/dist;
+  const x1 = a.x + nx*rA, y1 = a.y + ny*rA;
+  const x2 = b.x - nx*(rB+6), y2 = b.y - ny*(rB+6);
+  // Control points: slight curve
+  const mx = (x1+x2)/2, my = (y1+y2)/2;
+  const perp = { x:-ny*dist*.12, y:nx*dist*.12 };
+  return `M${x1},${y1} Q${mx+perp.x},${my+perp.y} ${x2},${y2}`;
+}
+
+function drawSectorWedge(parent, startDeg, endDeg, color, opacity) {
+  const R = 400;
+  const s = startDeg * Math.PI / 180, e = endDeg * Math.PI / 180;
+  const x1 = cx + R * Math.cos(s), y1 = cy - R * Math.sin(s);
+  const x2 = cx + R * Math.cos(e), y2 = cy - R * Math.sin(e);
+  const largeArc = (endDeg - startDeg) > 180 ? 1 : 0;
+  const d = `M${cx},${cy} L${x1},${y1} A${R},${R} 0 ${largeArc},0 ${x2},${y2} Z`;
+  parent.appendChild(svgEl('path', { d, fill:color, opacity }));
+}
+
+function svgEl(tag, attrs = {}) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  Object.entries(attrs).forEach(([k,v]) => el.setAttribute(k, v));
+  return el;
+}
+
+// ══════════════════════════════════════════════════════════════
+// TOOLTIP
+// ══════════════════════════════════════════════════════════════
+const tooltip = document.getElementById('tooltip');
+function showTooltip(event, n) {
+  const pd = priceData[n.id];
+  let html = `<div style="font-weight:800;font-size:13px;color:${SECTOR_COLORS[n.sector]}">${n.id} ${n.name}</div>`;
+  html += `<div style="font-size:10px;color:#94a3b8;margin-top:2px">${ROLE_LABELS[n.role]||''} · ${SECTOR_LABELS[n.sector]||''}</div>`;
+  if (pd) {
+    const cr = pd.changeRate;
+    const sign = (cr??0) > 0 ? '+' : '';
+    const c = (cr??0) > 0 ? '#4ade80' : (cr??0) < 0 ? '#f87171' : '#94a3b8';
+    const crStr = cr != null ? ` <span style="color:${c};font-size:11px">${sign}${cr.toFixed(2)}%</span>` : '';
+    html += `<div style="margin-top:6px;font-weight:800;font-size:14px">${pd.price}${crStr}</div>`;
+  }
+  tooltip.innerHTML = html;
+  tooltip.classList.add('show');
+  moveTooltip(event);
+}
+function moveTooltip(event) {
+  const wrap = document.getElementById('graphWrap');
+  const rect = wrap.getBoundingClientRect();
+  let tx = event.clientX - rect.left + 14;
+  let ty = event.clientY - rect.top + 14;
+  if (tx + 200 > wrap.offsetWidth) tx -= 220;
+  tooltip.style.left = tx + 'px';
+  tooltip.style.top  = ty + 'px';
+}
+function hideTooltip() { tooltip.classList.remove('show'); }
+document.getElementById('graph').addEventListener('mousemove', (e) => {
+  if (tooltip.classList.contains('show')) moveTooltip(e);
+});
+
+// ══════════════════════════════════════════════════════════════
+// INFO PANEL
+// ══════════════════════════════════════════════════════════════
+function selectNode(id) {
+  selectedNode = id;
+  render();
+  showInfoPanel(id);
+}
+
+function showInfoPanel(id) {
+  const n = NODES_DEF.find(x => x.id === id);
+  if (!n) return;
+  document.getElementById('infoEmpty').style.display = 'none';
+  const content = document.getElementById('infoContent');
+  content.style.display = 'flex';
+  const color = SECTOR_COLORS[n.sector];
+  const pd = priceData[id];
+
+  // Find connected nodes
+  const upstream   = EDGES_DEF.filter(e => e.to   === id).map(e => e.from);
+  const downstream = EDGES_DEF.filter(e => e.from === id).map(e => e.to);
+
+  let html = `
+    <div>
+      <span class="info-badge" style="background:${color}22;color:${color}">${SECTOR_LABELS[n.sector]}</span>
+      <div class="info-code" style="color:${color}">${n.id}</div>
+      <div class="info-name">${n.name}</div>
+      <div class="info-role">${ROLE_LABELS[n.role]||''}</div>
+    </div>`;
+
+  // Stock price block
+  if (pd) {
+    const cr    = pd.changeRate;
+    const sign  = (cr??0) > 0 ? '+' : '';
+    const cc    = (cr??0) > 0 ? 'up' : (cr??0) < 0 ? 'down' : '';
+    const ccBg  = (cr??0) > 0 ? 'up-bg' : (cr??0) < 0 ? 'down-bg' : '';
+    const changeStr = cr != null ? `${sign}${pd.change} (${sign}${cr.toFixed(2)}%)` : '收盤價';
+    html += `
+      <div class="stock-price-box">
+        <div class="spb-price ${cc}">${pd.price?.toLocaleString()}</div>
+        <span class="spb-change ${cc} ${ccBg}">${changeStr}</span>
+        <div class="spb-meta">
+          <div class="spb-item"><div class="lbl">開盤</div><div class="val">${pd.open||'—'}</div></div>
+          <div class="spb-item"><div class="lbl">最高</div><div class="val" style="color:#4ade80">${pd.high||'—'}</div></div>
+          <div class="spb-item"><div class="lbl">最低</div><div class="val" style="color:#f87171">${pd.low||'—'}</div></div>
+          <div class="spb-item"><div class="lbl">成交</div><div class="val">${fmtVol(pd.vol)}</div></div>
+        </div>
+      </div>`;
+  } else {
+    html += `<button class="btn-fetch" id="btnFetchThis" onclick="fetchOne('${id}')">↓ 載入 ${id} 股價</button>`;
+  }
+
+  // EPS / PE display
+  if (n.eps25 || n.eps26e) {
+    html += `<div style="background:rgba(255,255,255,.04);border-radius:8px;padding:10px 12px;font-size:12px;display:flex;gap:12px;flex-wrap:wrap">`;
+    if (n.eps25)  html += `<span style="color:#94a3b8">去年 EPS：<strong style="color:#e2e8f4">${n.eps25}</strong></span>`;
+    if (n.eps26e) html += `<span style="color:#94a3b8">今年估：<strong style="color:#4ade80">${n.eps26e}</strong></span>`;
+    if (n.eps25 && n.eps26e) {
+      const g = ((n.eps26e/n.eps25 - 1)*100).toFixed(0);
+      html += `<span style="color:#94a3b8">成長：<strong style="color:#4ade80">+${g}%</strong></span>`;
+    }
+    html += '</div>';
+  }
+
+  // Note
+  if (n.note) html += `<div class="info-note">${n.note}</div>`;
+
+  // Connected nodes
+  if (upstream.length) {
+    html += `<div class="info-section"><h5>⬆ 上游供應商</h5><div class="info-link-list">`;
+    upstream.forEach(uid => {
+      const un = NODES_DEF.find(x => x.id === uid);
+      if (un) html += `<div class="info-link" onclick="selectNode('${uid}')"><span>${un.name}</span><span class="code">${uid}</span></div>`;
+    });
+    html += '</div></div>';
+  }
+  if (downstream.length) {
+    html += `<div class="info-section"><h5>⬇ 下游客戶</h5><div class="info-link-list">`;
+    downstream.forEach(did => {
+      const dn = NODES_DEF.find(x => x.id === did);
+      if (dn) html += `<div class="info-link" onclick="selectNode('${did}')"><span>${dn.name}</span><span class="code">${did}</span></div>`;
+    });
+    html += '</div></div>';
+  }
+
+  content.innerHTML = html;
+}
+
+function fmtVol(v) {
+  if (!v) return '—';
+  if (v>=1e8) return (v/1e8).toFixed(1)+'億';
+  if (v>=1e4) return (v/1e4).toFixed(1)+'萬';
+  return v.toString();
+}
+
+// ══════════════════════════════════════════════════════════════
+// STOCK PRICE API
+// ══════════════════════════════════════════════════════════════
+async function fetchPrice(code) {
+  const pn = s => parseFloat(String(s ?? '').replace(/,/g, '')) || 0;
+  // 1. Real-time (TSE then OTC)
+  for (const ex of ['tse','otc']) {
+    try {
+      const r = await fetch(`https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${ex}_${code}.tw&json=1&delay=0`);
+      const d = await r.json();
+      const s = d.msgArray?.[0];
+      if (s?.z && s.z !== '-') {
+        const price = pn(s.z), prev = pn(s.y);
+        return { price, change:+(price-prev).toFixed(2), changeRate:+((price-prev)/prev*100).toFixed(2),
+                 open:pn(s.o)||null, high:pn(s.h)||null, low:pn(s.l)||null,
+                 vol:parseInt(String(s.v||'').replace(/,/g,''))*1000||null };
+      }
+    } catch(e){}
+  }
+  // 2. TWSE STOCK_DAY fallback (上市 TSE)
+  try {
+    const r = await fetch(`https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY?stockNo=${code}`);
+    const arr = await r.json();
+    if (Array.isArray(arr) && arr.length>=2) {
+      const last=arr[arr.length-1], prev=arr[arr.length-2];
+      const price=pn(last.ClosingPrice), prevP=pn(prev.ClosingPrice);
+      if (price>0) return { price, change:+(price-prevP).toFixed(2), changeRate:+((price-prevP)/prevP*100).toFixed(2),
+               open:pn(last.OpeningPrice)||null, high:pn(last.HighestPrice)||null,
+               low:pn(last.LowestPrice)||null, vol:parseInt(String(last.TradeVolume||'').replace(/,/g,''))||null };
+    }
+  } catch(e){}
+  // 3. TPEX P/E data fallback (上櫃 OTC 股)
+  try {
+    const r = await fetch(`https://www.tpex.org.tw/openapi/v1/tpex_mainboard_peratio_analysis`);
+    const arr = await r.json();
+    if (Array.isArray(arr)) {
+      const s = arr.find(x => x.SecuritiesCompanyCode === code);
+      if (s) {
+        const price = pn(s.ClosingPrice);
+        if (price>0) return { price, change:null, changeRate:null, open:null, high:null, low:null, vol:null };
+      }
+    }
+  } catch(e){}
+  return null;
+}
+
+async function fetchOne(code) {
+  const btn = document.getElementById('btnFetchThis');
+  if (btn) { btn.disabled=true; btn.textContent='載入中...'; }
+  const pd = await fetchPrice(code);
+  if (pd) { priceData[code] = pd; render(); showInfoPanel(code); }
+}
+
+async function loadAllPrices() {
+  const btn = document.getElementById('btnPrices');
+  btn.textContent='載入中...'; btn.disabled=true;
+  await Promise.all(NODES_DEF.map(async n => {
+    const pd = await fetchPrice(n.id);
+    if (pd) priceData[n.id] = pd;
+  }));
+  render();
+  if (selectedNode) showInfoPanel(selectedNode);
+  btn.textContent='↻ 更新股價'; btn.disabled=false;
+}
+
+// ══════════════════════════════════════════════════════════════
+// CONTROLS
+// ══════════════════════════════════════════════════════════════
+function toggleLabels() {
+  showLabels = !showLabels;
+  document.getElementById('btnLabels').classList.toggle('active', showLabels);
+  render();
+}
+function toggleSector(el, sector) {
+  if (hiddenSectors.has(sector)) hiddenSectors.delete(sector);
+  else hiddenSectors.add(sector);
+  el.classList.toggle('inactive', hiddenSectors.has(sector));
+  render();
+}
+function resetView() {
+  transform = { x:0, y:0, scale:1 };
+  document.getElementById('zoomGroup')?.setAttribute('transform',`translate(0,0) scale(1)`);
+}
+
+// ── Pan & Zoom ──
+let dragging=false, lastMouse={x:0,y:0};
+svg.addEventListener('mousedown', e => {
+  if (e.target.closest('.node-grp')) return;
+  dragging=true; lastMouse={x:e.clientX,y:e.clientY};
+  svg.classList.add('grabbing');
+});
+window.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  transform.x += e.clientX - lastMouse.x;
+  transform.y += e.clientY - lastMouse.y;
+  lastMouse={x:e.clientX, y:e.clientY};
+  document.getElementById('zoomGroup')?.setAttribute('transform',`translate(${transform.x},${transform.y}) scale(${transform.scale})`);
+});
+window.addEventListener('mouseup', () => { dragging=false; svg.classList.remove('grabbing'); });
+svg.addEventListener('wheel', e => {
+  e.preventDefault();
+  const delta = e.deltaY > 0 ? 0.9 : 1.1;
+  const newScale = Math.max(0.4, Math.min(3, transform.scale * delta));
+  // Zoom toward mouse position
+  const wrap = document.getElementById('graphWrap');
+  const rect = wrap.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  transform.x = mx - (mx - transform.x) * (newScale / transform.scale);
+  transform.y = my - (my - transform.y) * (newScale / transform.scale);
+  transform.scale = newScale;
+  document.getElementById('zoomGroup')?.setAttribute('transform',`translate(${transform.x},${transform.y}) scale(${transform.scale})`);
+}, { passive:false });
+
+// Touch pan support
+let lastTouch=null;
+svg.addEventListener('touchstart', e => { if(e.touches.length===1) lastTouch={x:e.touches[0].clientX, y:e.touches[0].clientY}; });
+svg.addEventListener('touchmove', e => {
+  if (!lastTouch || e.touches.length!==1) return;
+  e.preventDefault();
+  transform.x += e.touches[0].clientX - lastTouch.x;
+  transform.y += e.touches[0].clientY - lastTouch.y;
+  lastTouch={x:e.touches[0].clientX,y:e.touches[0].clientY};
+  document.getElementById('zoomGroup')?.setAttribute('transform',`translate(${transform.x},${transform.y}) scale(${transform.scale})`);
+},{passive:false});
+
+// ══════════════════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════════════════
+initNodes();
+render();
+document.getElementById('btnLabels').classList.add('active');
+</script>
+</body>
+</html>

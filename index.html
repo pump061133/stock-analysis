@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>台股基期分析看板</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:       #f0f4fb;
+  --surface:  #ffffff;
+  --border:   #dde3f4;
+  --border-2: #c8d0e8;
+  --text:     #1a1e2e;
+  --text-2:   #5a6080;
+  --accent:   #2f6bff;
+  --up:       #16a34a;
+  --down:     #dc2626;
+  --up-bg:    #f0fdf4;
+  --down-bg:  #fef2f2;
+  --pe-low:   #16a34a;   /* P/E < 15 */
+  --pe-mid:   #d97706;   /* P/E 15-25 */
+  --pe-high:  #dc2626;   /* P/E > 25 */
+  --base-low: #2563eb;   /* 基期低 */
+  --base-mid: #d97706;   /* 基期中 */
+  --base-hi:  #9333ea;   /* 基期高 */
+}
+
+body { background: var(--bg); color: var(--text); font-family: -apple-system,'Helvetica Neue',Arial,sans-serif; font-size: 14px; min-height: 100vh; }
+
+/* ── Header ── */
+.header {
+  background: rgba(240,244,251,.95); backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--border); padding: 14px 20px;
+  position: sticky; top: 0; z-index: 100;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+}
+.header-title { font-size: 18px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+.header-title .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px rgba(47,107,255,.2); }
+.header-right { display: flex; gap: 8px; align-items: center; margin-left: auto; flex-wrap: wrap; }
+
+.search-wrap { display: flex; gap: 6px; }
+.search-wrap input {
+  border: 1.5px solid var(--border-2); border-radius: 8px; padding: 7px 12px;
+  font-size: 13px; width: 140px; outline: none; background: var(--surface);
+  transition: border-color .15s, width .2s;
+}
+.search-wrap input:focus { border-color: var(--accent); width: 180px; }
+.btn {
+  border: none; border-radius: 8px; padding: 7px 16px; font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: opacity .15s, transform .1s;
+}
+.btn:active { transform: scale(.97); }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { opacity: .88; }
+.btn-ghost { background: var(--surface); border: 1.5px solid var(--border-2); color: var(--text-2); }
+.btn-ghost:hover { border-color: var(--border); background: var(--bg); }
+.btn-sm { padding: 5px 10px; font-size: 12px; }
+.last-update { font-size: 11px; color: var(--text-2); white-space: nowrap; }
+
+/* ── Tabs ── */
+.tabs { display: flex; gap: 4px; padding: 12px 20px 0; border-bottom: 1px solid var(--border); background: var(--surface); }
+.tab { background: none; border: none; padding: 8px 16px 10px; font-size: 13px; font-weight: 600; color: var(--text-2); cursor: pointer; border-bottom: 2.5px solid transparent; transition: color .15s, border-color .15s; }
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ── Summary bar ── */
+.summary { display: flex; gap: 20px; padding: 12px 20px; background: var(--surface); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.summary-item .label { font-size: 11px; color: var(--text-2); margin-bottom: 2px; }
+.summary-item .val { font-size: 20px; font-weight: 800; }
+.summary-item .val.up { color: var(--up); }
+.summary-item .val.down { color: var(--down); }
+
+/* ── Cards grid ── */
+.cards-wrap { padding: 16px 20px 40px; }
+.cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+
+/* ── Stock card ── */
+.card {
+  background: var(--surface); border-radius: 14px; border: 1.5px solid var(--border);
+  padding: 16px; display: flex; flex-direction: column; gap: 12px;
+  transition: box-shadow .15s, transform .1s;
+  position: relative;
+}
+.card:hover { box-shadow: 0 4px 20px rgba(0,0,0,.07); transform: translateY(-1px); }
+.card.loading { opacity: .6; pointer-events: none; }
+
+.card-remove {
+  position: absolute; top: 12px; right: 12px;
+  background: none; border: none; font-size: 16px; color: var(--text-2);
+  cursor: pointer; padding: 2px 5px; border-radius: 6px; transition: background .1s, color .1s;
+}
+.card-remove:hover { background: #fee2e2; color: var(--down); }
+
+/* Card header */
+.card-head { display: flex; align-items: flex-start; gap: 10px; padding-right: 28px; }
+.card-code { font-size: 22px; font-weight: 800; letter-spacing: -.5px; }
+.card-name { font-size: 13px; font-weight: 600; margin-bottom: 3px; }
+.card-sector { font-size: 11px; color: var(--text-2); }
+.card-badges { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 2px; }
+
+/* Badge */
+.badge {
+  display: inline-block; font-size: 10.5px; font-weight: 700;
+  padding: 2px 8px; border-radius: 10px; white-space: nowrap;
+}
+.badge-base-low  { background: #dbeafe; color: var(--base-low); }
+.badge-base-mid  { background: #fef3c7; color: var(--base-mid); }
+.badge-base-high { background: #f3e8ff; color: var(--base-hi); }
+.badge-na        { background: var(--bg); color: var(--text-2); }
+
+/* Price section */
+.card-price-row { display: flex; align-items: baseline; gap: 10px; }
+.price-main { font-size: 30px; font-weight: 800; letter-spacing: -1px; }
+.price-change { font-size: 14px; font-weight: 700; padding: 2px 8px; border-radius: 6px; }
+.price-change.up   { color: var(--up); background: var(--up-bg); }
+.price-change.down { color: var(--down); background: var(--down-bg); }
+.price-change.flat { color: var(--text-2); background: var(--bg); }
+
+/* Metrics grid */
+.metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.metric { background: var(--bg); border-radius: 8px; padding: 8px 10px; }
+.metric .m-label { font-size: 10px; color: var(--text-2); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; }
+.metric .m-val { font-size: 16px; font-weight: 800; }
+.metric .m-val.pe-low  { color: var(--pe-low); }
+.metric .m-val.pe-mid  { color: var(--pe-mid); }
+.metric .m-val.pe-high { color: var(--pe-high); }
+.metric .m-sub { font-size: 10px; color: var(--text-2); margin-top: 2px; }
+
+/* OHLC bar */
+.ohlc { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-2); }
+.ohlc .o-item { display: flex; flex-direction: column; align-items: center; flex: 1; }
+.ohlc .o-val  { font-size: 12px; font-weight: 700; color: var(--text); }
+
+/* Analysis note */
+.card-note { font-size: 11.5px; color: var(--text-2); background: var(--bg); border-radius: 8px; padding: 8px 10px; line-height: 1.6; }
+.card-note strong { color: var(--text); }
+
+/* EPS edit row */
+.eps-row { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2); }
+.eps-row input {
+  width: 72px; border: 1.5px solid var(--border-2); border-radius: 6px; padding: 4px 8px;
+  font-size: 12px; font-weight: 700; text-align: right; outline: none;
+}
+.eps-row input:focus { border-color: var(--accent); }
+.eps-row .eps-calc { font-size: 11px; color: var(--text-2); }
+
+/* Skeleton loader */
+.card-skeleton { animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 0%,100%{opacity:.6} 50%{opacity:.3} }
+.skeleton-line { background: var(--border); border-radius: 6px; height: 14px; margin: 4px 0; }
+.skeleton-line.lg { height: 28px; width: 60%; }
+.skeleton-line.sm { height: 10px; width: 40%; }
+
+/* Empty state */
+.empty { text-align: center; padding: 60px 20px; color: var(--text-2); }
+.empty .emoji { font-size: 40px; margin-bottom: 12px; }
+.empty .msg { font-size: 15px; margin-bottom: 8px; }
+.empty .hint { font-size: 12px; }
+
+/* Toast */
+.toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px);
+  background: #1e293b; color: #f8fafc; border-radius: 10px; padding: 10px 20px;
+  font-size: 13px; font-weight: 600; z-index: 9999; transition: transform .25s cubic-bezier(.4,0,.2,1);
+  box-shadow: 0 4px 20px rgba(0,0,0,.3); white-space: nowrap;
+}
+.toast.show { transform: translateX(-50%) translateY(0); }
+
+/* Responsive */
+@media (max-width: 600px) {
+  .cards-wrap { padding: 12px 10px 32px; }
+  .header { padding: 10px 12px; }
+  .summary { padding: 10px 12px; gap: 14px; }
+  .cards-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-title"><span class="dot"></span>台股基期分析看板</div>
+  <div class="header-right">
+    <div class="search-wrap">
+      <input type="text" id="searchInput" placeholder="輸入代號，如 2408" maxlength="6"
+             onkeydown="if(event.key==='Enter')addStock()">
+      <button class="btn btn-primary" onclick="addStock()">＋ 加入</button>
+    </div>
+    <button class="btn btn-ghost btn-sm" onclick="refreshAll()">↻ 重整</button>
+    <span class="last-update" id="lastUpdate">—</span>
+  </div>
+</header>
+
+<div class="tabs">
+  <button class="tab active" onclick="setTab('all',this)">全部 <span id="tabAllCount"></span></button>
+  <button class="tab" onclick="setTab('low',this)">🟢 基期低</button>
+  <button class="tab" onclick="setTab('medium',this)">🟡 基期中</button>
+  <button class="tab" onclick="setTab('high',this)">🟣 基期高</button>
+</div>
+
+<div class="summary">
+  <div class="summary-item"><div class="label">追蹤股票</div><div class="val" id="sumTotal">—</div></div>
+  <div class="summary-item"><div class="label">上漲</div><div class="val up" id="sumUp">—</div></div>
+  <div class="summary-item"><div class="label">下跌</div><div class="val down" id="sumDown">—</div></div>
+  <div class="summary-item"><div class="label">看板平均本益比</div><div class="val" id="sumAvgPE">—</div></div>
+</div>
+
+<div class="cards-wrap">
+  <div class="cards-grid" id="cardsGrid"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════════════
+// 預設分析資料（來自 2026-05-26 低基期研究報告）
+// ══════════════════════════════════════════════════
+const PRESET = {
+  '2408': { name:'南亞科技',  sector:'記憶體',    base:'low',    eps25:3.6,  eps26e:5.5,  note:'DDR4 循環確認翻轉，2025 年虧損基期最低。DDR4 Q1 已漲 5 成，週期啟動。' },
+  '2344': { name:'華邦電子',  sector:'記憶體',    base:'low',    eps25:1.2,  eps26e:7.5,  note:'NOR Flash 強力復甦，EPS 估翻 6 倍，目標價 120 元，本益比 16 倍合理。' },
+  '5289': { name:'宜鼎國際',  sector:'工業記憶體', base:'low',    eps25:null, eps26e:null, note:'AI 伺服器帶動工業級記憶體需求，下游擴產明確。' },
+  '3163': { name:'波若威',    sector:'矽光子',    base:'low',    eps25:null, eps26e:null, note:'CPO 共封裝光學新星，AI 資料中心 2026-27 升級週期受惠。' },
+  '3450': { name:'聯鈞光電',  sector:'矽光子',    base:'low',    eps25:null, eps26e:null, note:'矽光子平台供應鏈，CoWoS CPO 訂單放量初期，基期最低。' },
+  '3017': { name:'奇鋐科技',  sector:'散熱',     base:'medium', eps25:45,   eps26e:70.25,note:'液冷水冷板翻倍。謝金河警示：2025 年線乖離過大（1585/750），等回測。' },
+  '2308': { name:'台達電',    sector:'電源',     base:'medium', eps25:28,   eps26e:35.06,note:'電源管理 AI 資料中心核心贏家。法人長線加碼，本益比偏高但成長確定。' },
+  '2383': { name:'台光電',    sector:'PCB',      base:'high',   eps25:null, eps26e:null, note:'AI 高階 PCB 龍頭，2025 年已大漲。年線乖離大，追高有風險。' },
+  '6274': { name:'台燿',      sector:'CCL',      base:'high',   eps25:null, eps26e:null, note:'高頻高速 CCL，AI 超級週期受惠但 2025 基期已走高。' },
+  '1101': { name:'台泥',      sector:'水泥',     base:'low',    eps25:null, eps26e:null, note:'傳產最低位，越南廠獲利回溫。謝金河資金輪動目標，股息穩定。' },
+  '1301': { name:'台塑',      sector:'石化',     base:'low',    eps25:null, eps26e:null, note:'石化循環底部，原料成本下降邊際改善，等景氣確認。' },
+  '1802': { name:'台玻',      sector:'玻璃',     base:'low',    eps25:null, eps26e:null, note:'車用玻璃成長題材，建材需求低位，基期極低。' },
+  '4551': { name:'智伸科',    sector:'精密零件',  base:'low',    eps25:null, eps26e:null, note:'車用精密零件，產業調整後低位，換機潮受惠。' },
+  '2330': { name:'台積電',    sector:'晶圓代工',  base:'high',   eps25:45,   eps26e:55,   note:'全球 AI 半導體核心，本益比約 25 倍+，基期高，仍是長線核心持股。' },
+  '3711': { name:'日月光投控', sector:'封裝測試',  base:'medium', eps25:null, eps26e:null, note:'AI 先進封裝成長，CoWoS WoS 環節受益。' },
+  '2303': { name:'聯電',      sector:'晶圓代工',  base:'medium', eps25:null, eps26e:null, note:'成熟製程穩健，基期中，低本益比防守型。' },
+};
+
+const DEFAULT_WATCHLIST = ['2408','2344','3163','3017','2308','1101','1301'];
+
+// ══════════════════════════════════════════════════
+// State
+// ══════════════════════════════════════════════════
+let watchlist   = JSON.parse(localStorage.getItem('watchlist') || JSON.stringify(DEFAULT_WATCHLIST));
+let peCache     = {};   // code → { pe, yield, pb }
+let priceCache  = {};   // code → { price, change, changeRate, open, high, low, name, vol }
+let customEPS   = JSON.parse(localStorage.getItem('customEPS') || '{}');
+let currentTab  = 'all';
+let loading     = new Set();
+
+// ══════════════════════════════════════════════════
+// API helpers
+// ══════════════════════════════════════════════════
+
+// 批次抓取本益比 (TWSE listed)
+async function fetchAllPE() {
+  try {
+    const r = await fetch('https://openapi.twse.com.tw/v1/exchangeReport/BWIBBU_ALL', { cache: 'no-store' });
+    const data = await r.json();
+    data.forEach(s => {
+      if (s.Code) {
+        peCache[s.Code] = {
+          pe:    parseFloat(s.PEratio)     || null,
+          yield: parseFloat(s.DividendYield) || null,
+          pb:    parseFloat(s.PBratio)     || null,
+        };
+      }
+    });
+  } catch(e) { console.warn('PE fetch failed:', e); }
+
+  // OTC P/E
+  try {
+    const r2 = await fetch('https://www.tpex.org.tw/openapi/v1/tpex_mainboard_peratio_analysis', { cache: 'no-store' });
+    const data2 = await r2.json();
+    data2.forEach(s => {
+      const code = s.SecuritiesCompanyCode || s['Securities company code'];
+      if (code) {
+        peCache[code] = {
+          pe:    parseFloat(s['Price-Earnings ratio']) || parseFloat(s.PEratio) || null,
+          yield: parseFloat(s['Dividend yield']) || parseFloat(s.DividendYield) || null,
+          pb:    parseFloat(s['Price-Book ratio']) || parseFloat(s.PBratio) || null,
+        };
+      }
+    });
+  } catch(e) { console.warn('OTC PE fetch failed:', e); }
+}
+
+// 抓單一股票即時價格
+async function fetchPrice(code) {
+  // Try TSE realtime
+  try {
+    const r = await fetch(`https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_${code}.tw&json=1&delay=0`);
+    const d = await r.json();
+    if (d.msgArray?.length && d.msgArray[0].z && d.msgArray[0].z !== '-') {
+      const s = d.msgArray[0];
+      const price = parseFloat(s.z);
+      const prev  = parseFloat(s.y);
+      return { name: s.n, price, change: +(price-prev).toFixed(2), changeRate: +((price-prev)/prev*100).toFixed(2),
+               open: parseFloat(s.o)||null, high: parseFloat(s.h)||null, low: parseFloat(s.l)||null,
+               vol: parseInt(s.v)*1000||null, exchange:'TSE' };
+    }
+  } catch(e) {}
+
+  // Try OTC realtime
+  try {
+    const r = await fetch(`https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=otc_${code}.tw&json=1&delay=0`);
+    const d = await r.json();
+    if (d.msgArray?.length && d.msgArray[0].z && d.msgArray[0].z !== '-') {
+      const s = d.msgArray[0];
+      const price = parseFloat(s.z);
+      const prev  = parseFloat(s.y);
+      return { name: s.n, price, change: +(price-prev).toFixed(2), changeRate: +((price-prev)/prev*100).toFixed(2),
+               open: parseFloat(s.o)||null, high: parseFloat(s.h)||null, low: parseFloat(s.l)||null,
+               vol: parseInt(s.v)*1000||null, exchange:'OTC' };
+    }
+  } catch(e) {}
+
+  // Fallback: TWSE STOCK_DAY (closing price of latest day)
+  try {
+    const r = await fetch(`https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY?stockNo=${code}`, { cache: 'no-store' });
+    const arr = await r.json();
+    if (Array.isArray(arr) && arr.length >= 2) {
+      const last = arr[arr.length-1];
+      const prev = arr[arr.length-2];
+      const price = parseFloat(last.ClosingPrice);
+      const prevP = parseFloat(prev.ClosingPrice);
+      const pset  = PRESET[code];
+      return { name: pset?.name || code, price, change: +(price-prevP).toFixed(2),
+               changeRate: +((price-prevP)/prevP*100).toFixed(2),
+               open: parseFloat(last.OpeningPrice)||null, high: parseFloat(last.HighestPrice)||null,
+               low: parseFloat(last.LowestPrice)||null, vol: parseInt(last.TradeVolume)||null, exchange:'TSE' };
+    }
+  } catch(e) {}
+
+  return null; // fetch failed
+}
+
+// ══════════════════════════════════════════════════
+// Rendering
+// ══════════════════════════════════════════════════
+
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function peClass(pe) {
+  if (!pe || isNaN(pe)) return '';
+  if (pe < 15) return 'pe-low';
+  if (pe < 25) return 'pe-mid';
+  return 'pe-high';
+}
+function peLabel(pe) {
+  if (!pe || isNaN(pe)) return '—';
+  if (pe < 15) return `${pe.toFixed(1)} 倍 ✓`;
+  if (pe < 25) return `${pe.toFixed(1)} 倍`;
+  return `${pe.toFixed(1)} 倍 ⚠`;
+}
+function baseClass(b) {
+  if (b==='low')    return 'badge-base-low';
+  if (b==='medium') return 'badge-base-mid';
+  if (b==='high')   return 'badge-base-high';
+  return 'badge-na';
+}
+function baseLabel(b) {
+  if (b==='low')    return '🟢 基期低';
+  if (b==='medium') return '🟡 基期中';
+  if (b==='high')   return '🟣 基期高';
+  return '待評估';
+}
+function fmtVol(v) {
+  if (!v) return '—';
+  if (v >= 1e8) return (v/1e8).toFixed(1) + ' 億';
+  if (v >= 1e4) return (v/1e4).toFixed(1) + ' 萬';
+  return v.toString();
+}
+
+function renderCard(code) {
+  const grid = document.getElementById('cardsGrid');
+  let el = document.getElementById(`card-${code}`);
+  if (!el) {
+    el = document.createElement('div');
+    el.id = `card-${code}`;
+    el.className = 'card';
+    grid.appendChild(el);
+  }
+
+  const p    = priceCache[code];
+  const pe   = peCache[code];
+  const pset = PRESET[code] || {};
+  const base = pset.base || 'unknown';
+
+  // Hide by tab
+  let hide = false;
+  if (currentTab === 'low'    && base !== 'low')    hide = true;
+  if (currentTab === 'medium' && base !== 'medium') hide = true;
+  if (currentTab === 'high'   && base !== 'high')   hide = true;
+  el.style.display = hide ? 'none' : '';
+
+  if (loading.has(code)) {
+    el.innerHTML = `<button class="card-remove" onclick="removeStock('${esc(code)}')">✕</button>
+      <div class="card-skeleton">
+        <div class="skeleton-line lg"></div><div class="skeleton-line sm"></div>
+        <div class="skeleton-line" style="width:80%;height:40px;margin-top:8px"></div>
+      </div>`;
+    return;
+  }
+
+  const name     = p?.name || pset.name || code;
+  const price    = p?.price;
+  const change   = p?.change;
+  const chRate   = p?.changeRate;
+  const isUp     = change > 0;
+  const isDown   = change < 0;
+  const chClass  = isUp ? 'up' : isDown ? 'down' : 'flat';
+  const chSign   = isUp ? '+' : '';
+
+  // P/E from market data first, then calculate from custom EPS
+  let peVal = pe?.pe || null;
+  let epsVal = null;
+  if (peVal && price) {
+    epsVal = (price / peVal).toFixed(2);
+  }
+  const eps26  = pset.eps26e;
+  const eps25  = pset.eps25;
+  // If user has custom EPS, recalculate PE
+  const myEPS  = customEPS[code];
+  if (myEPS && price) {
+    peVal  = +(price / parseFloat(myEPS)).toFixed(1);
+    epsVal = parseFloat(myEPS).toFixed(2);
+  }
+
+  const yieldVal = pe?.yield;
+  const pbVal    = pe?.pb;
+
+  el.innerHTML = `
+    <button class="card-remove" title="移除" onclick="removeStock('${esc(code)}')">✕</button>
+
+    <div class="card-head">
+      <div>
+        <div style="display:flex;gap:8px;align-items:baseline">
+          <div class="card-code">${esc(code)}</div>
+          <div style="font-size:12px;color:var(--text-2)">${p?.exchange||''}</div>
+        </div>
+        <div class="card-name">${esc(name)}</div>
+        <div class="card-sector">${esc(pset.sector||'—')}</div>
+      </div>
+      <div style="margin-left:auto">
+        <span class="badge ${baseClass(base)}">${baseLabel(base)}</span>
+      </div>
+    </div>
+
+    ${price ? `
+    <div class="card-price-row">
+      <div class="price-main">${price.toLocaleString()}</div>
+      <div class="price-change ${chClass}">${chSign}${change} (${chSign}${chRate?.toFixed(2)}%)</div>
+    </div>
+    <div class="ohlc">
+      <div class="o-item"><div class="o-val">${p?.open?.toFixed(2)||'—'}</div><div>開盤</div></div>
+      <div class="o-item"><div class="o-val" style="color:var(--down)">${p?.high?.toFixed(2)||'—'}</div><div>最高</div></div>
+      <div class="o-item"><div class="o-val" style="color:var(--up)">${p?.low?.toFixed(2)||'—'}</div><div>最低</div></div>
+      <div class="o-item"><div class="o-val">${fmtVol(p?.vol)}</div><div>成交</div></div>
+    </div>
+    ` : `<div style="color:var(--text-2);font-size:12px;text-align:center;padding:12px 0">無法取得股價（非交易時間）</div>`}
+
+    <div class="metrics">
+      <div class="metric">
+        <div class="m-label">本益比</div>
+        <div class="m-val ${peClass(peVal)}">${peLabel(peVal)}</div>
+        <div class="m-sub">${peVal < 15 ? '合理偏低' : peVal < 25 ? '市場溢價' : peVal ? '估值偏高' : '—'}</div>
+      </div>
+      <div class="metric">
+        <div class="m-label">EPS (TTM)</div>
+        <div class="m-val">${epsVal ? epsVal + ' 元' : '—'}</div>
+        <div class="m-sub">${eps26 ? `預估 ${eps26} 元` : eps25 ? `去年 ${eps25} 元` : '需填入'}</div>
+      </div>
+      <div class="metric">
+        <div class="m-label">殖利率</div>
+        <div class="m-val">${yieldVal ? yieldVal.toFixed(2) + '%' : '—'}</div>
+        <div class="m-sub">${pbVal ? `淨值比 ${pbVal.toFixed(2)}` : '—'}</div>
+      </div>
+    </div>
+
+    ${(eps25 || eps26) ? `
+    <div style="display:flex;gap:12px;font-size:11px;color:var(--text-2);background:var(--bg);border-radius:8px;padding:8px 10px">
+      ${eps25  ? `<span>去年 EPS：<strong style="color:var(--text)">${eps25} 元</strong></span>` : ''}
+      ${eps26  ? `<span>今年估：<strong style="color:var(--base-low)">${eps26} 元</strong></span>` : ''}
+      ${eps25 && eps26 ? `<span>成長：<strong style="color:var(--up)">+${((eps26/eps25-1)*100).toFixed(0)}%</strong></span>` : ''}
+    </div>
+    ` : ''}
+
+    <div class="eps-row">
+      <span>手動輸入 EPS：</span>
+      <input type="number" step="0.1" value="${myEPS||''}" placeholder="如 5.5"
+             onchange="setCustomEPS('${esc(code)}', this.value)" oninput="setCustomEPS('${esc(code)}', this.value)">
+      <span class="eps-calc">${price && myEPS ? `→ 本益比 ${(price/parseFloat(myEPS)).toFixed(1)} 倍` : '輸入後自動計算本益比'}</span>
+    </div>
+
+    ${pset.note ? `<div class="card-note">${esc(pset.note)}</div>` : ''}
+  `;
+}
+
+// ══════════════════════════════════════════════════
+// Actions
+// ══════════════════════════════════════════════════
+
+function setCustomEPS(code, val) {
+  if (val && !isNaN(parseFloat(val))) {
+    customEPS[code] = parseFloat(val);
+  } else {
+    delete customEPS[code];
+  }
+  localStorage.setItem('customEPS', JSON.stringify(customEPS));
+  renderCard(code);
+  updateSummary();
+}
+
+async function loadStock(code) {
+  loading.add(code);
+  renderCard(code);
+  const data = await fetchPrice(code);
+  loading.delete(code);
+  if (data) {
+    priceCache[code] = data;
+    // Fill in name from preset if API didn't return
+    if (!data.name || data.name === code) {
+      priceCache[code].name = PRESET[code]?.name || code;
+    }
+  }
+  renderCard(code);
+  updateSummary();
+}
+
+async function addStock() {
+  const input = document.getElementById('searchInput');
+  const code  = input.value.trim().replace(/[^0-9A-Za-z]/g, '');
+  if (!code) { showToast('請輸入股票代號'); return; }
+  if (watchlist.includes(code)) { showToast(`${code} 已在看板中`); input.value=''; return; }
+  watchlist.push(code);
+  saveWatchlist();
+  input.value = '';
+  await loadStock(code);
+  document.getElementById(`card-${code}`)?.scrollIntoView({ behavior:'smooth', block:'center' });
+  showToast(`✓ 已加入 ${code}`);
+}
+
+function removeStock(code) {
+  watchlist = watchlist.filter(c => c !== code);
+  saveWatchlist();
+  document.getElementById(`card-${code}`)?.remove();
+  updateSummary();
+  document.getElementById('tabAllCount').textContent = `(${watchlist.length})`;
+  showToast(`已移除 ${code}`);
+}
+
+function saveWatchlist() {
+  localStorage.setItem('watchlist', JSON.stringify(watchlist));
+  document.getElementById('tabAllCount').textContent = `(${watchlist.length})`;
+}
+
+async function refreshAll() {
+  showToast('↻ 資料更新中...');
+  await fetchAllPE();
+  await Promise.all(watchlist.map(code => loadStock(code)));
+  document.getElementById('lastUpdate').textContent = '更新：' + new Date().toLocaleTimeString('zh-TW', { hour:'2-digit', minute:'2-digit' });
+  showToast('✓ 已更新所有資料');
+}
+
+function setTab(tab, el) {
+  currentTab = tab;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  watchlist.forEach(renderCard);
+}
+
+function updateSummary() {
+  const loaded = watchlist.filter(c => priceCache[c]);
+  const upStocks   = loaded.filter(c => priceCache[c].change > 0);
+  const downStocks = loaded.filter(c => priceCache[c].change < 0);
+  const peValues   = watchlist.map(c => {
+    const myEPS = customEPS[c];
+    if (myEPS && priceCache[c]) return priceCache[c].price / parseFloat(myEPS);
+    return peCache[c]?.pe || null;
+  }).filter(Boolean);
+  const avgPE = peValues.length ? (peValues.reduce((a,b)=>a+b,0)/peValues.length).toFixed(1) : '—';
+
+  document.getElementById('sumTotal').textContent = watchlist.length;
+  document.getElementById('sumUp').textContent    = upStocks.length;
+  document.getElementById('sumDown').textContent  = downStocks.length;
+  document.getElementById('sumAvgPE').textContent = avgPE === '—' ? '—' : avgPE + ' 倍';
+  document.getElementById('tabAllCount').textContent = `(${watchlist.length})`;
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+// ══════════════════════════════════════════════════
+// Init
+// ══════════════════════════════════════════════════
+async function init() {
+  updateSummary();
+  // Render skeletons immediately
+  watchlist.forEach(code => {
+    loading.add(code);
+    renderCard(code);
+  });
+
+  // Fetch all P/E data first (one batch call)
+  await fetchAllPE();
+
+  // Then fetch prices in parallel
+  await Promise.all(watchlist.map(code => loadStock(code)));
+
+  document.getElementById('lastUpdate').textContent =
+    '更新：' + new Date().toLocaleTimeString('zh-TW', { hour:'2-digit', minute:'2-digit' });
+}
+
+init();
+</script>
+</body>
+</html>
