@@ -284,54 +284,57 @@ async function fetchAllPE() {
   } catch(e) { console.warn('OTC PE fetch failed:', e); }
 }
 
-// 抓單一股票即時價格
+// 抓單一股票即時價格（CORS Proxy → TWSE/TPEX）
+const CORS_PROXY = 'https://corsproxy.io/?url=';
 async function fetchPrice(code) {
-  // Try TSE realtime
+  const pset = PRESET[code] || {};
+
+  // 盤中即時：上市
   try {
-    const r = await fetch(`https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_${code}.tw&json=1&delay=0`);
+    const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_${code}.tw&json=1&delay=0`;
+    const r = await fetch(CORS_PROXY + encodeURIComponent(url));
     const d = await r.json();
     if (d.msgArray?.length && d.msgArray[0].z && d.msgArray[0].z !== '-') {
       const s = d.msgArray[0];
-      const price = parseFloat(s.z);
-      const prev  = parseFloat(s.y);
-      return { name: s.n, price, change: +(price-prev).toFixed(2), changeRate: +((price-prev)/prev*100).toFixed(2),
-               open: parseFloat(s.o)||null, high: parseFloat(s.h)||null, low: parseFloat(s.l)||null,
-               vol: parseInt(s.v)*1000||null, exchange:'TSE' };
+      const price = parseFloat(s.z), prev = parseFloat(s.y);
+      return { name: pset.name || s.n, price, change: +(price-prev).toFixed(2),
+               changeRate: +((price-prev)/prev*100).toFixed(2),
+               open: parseFloat(s.o)||null, high: parseFloat(s.h)||null,
+               low: parseFloat(s.l)||null, vol: parseInt(s.v)*1000||null, exchange:'TSE' };
     }
   } catch(e) {}
 
-  // Try OTC realtime
+  // 盤中即時：上櫃
   try {
-    const r = await fetch(`https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=otc_${code}.tw&json=1&delay=0`);
+    const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=otc_${code}.tw&json=1&delay=0`;
+    const r = await fetch(CORS_PROXY + encodeURIComponent(url));
     const d = await r.json();
     if (d.msgArray?.length && d.msgArray[0].z && d.msgArray[0].z !== '-') {
       const s = d.msgArray[0];
-      const price = parseFloat(s.z);
-      const prev  = parseFloat(s.y);
-      return { name: s.n, price, change: +(price-prev).toFixed(2), changeRate: +((price-prev)/prev*100).toFixed(2),
-               open: parseFloat(s.o)||null, high: parseFloat(s.h)||null, low: parseFloat(s.l)||null,
-               vol: parseInt(s.v)*1000||null, exchange:'OTC' };
+      const price = parseFloat(s.z), prev = parseFloat(s.y);
+      return { name: pset.name || s.n, price, change: +(price-prev).toFixed(2),
+               changeRate: +((price-prev)/prev*100).toFixed(2),
+               open: parseFloat(s.o)||null, high: parseFloat(s.h)||null,
+               low: parseFloat(s.l)||null, vol: parseInt(s.v)*1000||null, exchange:'OTC' };
     }
   } catch(e) {}
 
-  // Fallback: TWSE STOCK_DAY (closing price of latest day)
+  // Fallback：TWSE 最近收盤價
   try {
-    const r = await fetch(`https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY?stockNo=${code}`, { cache: 'no-store' });
+    const url = `https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY?stockNo=${code}`;
+    const r = await fetch(CORS_PROXY + encodeURIComponent(url), { cache: 'no-store' });
     const arr = await r.json();
     if (Array.isArray(arr) && arr.length >= 2) {
-      const last = arr[arr.length-1];
-      const prev = arr[arr.length-2];
-      const price = parseFloat(last.ClosingPrice);
-      const prevP = parseFloat(prev.ClosingPrice);
-      const pset  = PRESET[code];
-      return { name: pset?.name || code, price, change: +(price-prevP).toFixed(2),
+      const last = arr[arr.length-1], prev = arr[arr.length-2];
+      const price = parseFloat(last.ClosingPrice), prevP = parseFloat(prev.ClosingPrice);
+      return { name: pset.name || code, price, change: +(price-prevP).toFixed(2),
                changeRate: +((price-prevP)/prevP*100).toFixed(2),
                open: parseFloat(last.OpeningPrice)||null, high: parseFloat(last.HighestPrice)||null,
                low: parseFloat(last.LowestPrice)||null, vol: parseInt(last.TradeVolume)||null, exchange:'TSE' };
     }
   } catch(e) {}
 
-  return null; // fetch failed
+  return null;
 }
 
 // ══════════════════════════════════════════════════
